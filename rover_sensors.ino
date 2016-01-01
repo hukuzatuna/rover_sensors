@@ -1,9 +1,15 @@
 
+//-------------------------------------------------------------------------
 // Autonomous robot rover - sensor/comms/control platform
 //
 // Philip R. Moyer
 // November 2015
+//-------------------------------------------------------------------------
 
+
+//-------------------------------------------------------------------------
+// Preprocessor directives
+//-------------------------------------------------------------------------
 
 #include <Wire.h>
 #include <Adafruit_Sensor.h>      // 10DoF support
@@ -17,6 +23,12 @@
 #include <LIDARLite.h>            // LIDARLite v2 rangefinder sensor
 // #include <Rover.h>               // Rover class and method definitions
 #include "RTClib.h"               // Real time clock
+#include <Adafruit_PWMServoDriver.h>  // Servo controller board (at I2C 0x40)
+
+
+//-------------------------------------------------------------------------
+// Variables and constants
+//-------------------------------------------------------------------------
 
 // Initialize sensor objects
 Adafruit_LSM303_Accel_Unified accel = Adafruit_LSM303_Accel_Unified(30301);
@@ -35,6 +47,12 @@ const bool UseLIDAR            = true;      // Use LIDAR sensors?
 const bool UseSharpIR          = false;     // Use Sharp IR rangefinders?
 const bool debug               = false;     // Produce debugging output on default Serial?
 char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+// Use care when changing PWM settings as overdriving the servos can strip the gears!
+const int SERVOMIN             = 140;       // Minimum servo PWM pulse length (out of 4096)
+const int SERVOMAX             = 600;       // Maximum servo PWM pulse length (out of 4096)
+
+// Global variables
+char dataBuffer[255];       // data buffer for communications
 
 // Sharp IR Rangefinder setup
 
@@ -66,6 +84,13 @@ bool                  IRstarted         = false;    // Have we cycled through ra
 bool                  LIDARstarted      = false;    // Have we cycled through a LIDAR scan yet?
 bool                  dualCPUenabled    = false;    // Are comms between CPUs working?
 char                  dataBuffer[255];              // Communicatinos data buffer; holds one line
+// unsigned int          LIDARpano[180][90];           // Panoramic map of distances reported by LIDAR sweep - REWORK -
+// This runs the Mega out of memory!
+Adafruit_PWMServoDriver pwmServos01 = Adafruit_PWMServoDriver(0x41); // Initialize the servo controller
+
+//-------------------------------------------------------------------------
+// Functions
+//-------------------------------------------------------------------------
 
 void configureTSLSensor(void)
 {
@@ -73,6 +98,9 @@ void configureTSLSensor(void)
   tsl.setIntegrationTime(TSL2561_INTEGRATIONTIME_13MS);  /* fast but low resolution */
   // tsl.setIntegrationTime(TSL2561_INTEGRATIONTIME_402MS);  /* 16 bit high resolution */
 }
+
+
+// Prints a hash followed by a date/time stamp on Serial
 
 void printDateStamp(void)
 {
@@ -95,6 +123,114 @@ void printDateStamp(void)
   Serial.print(" ");
 }
 
+
+// Perform a 180 degree x 90 degree LIDAR scan of the environment
+
+bool doLIDARscan(Adafruit_PWMServoDriver curServo)
+{
+  int i, j;                     // Indexes that are degrees of sweep
+
+  i = SERVOMIN;                    // Initialization
+  j = SERVOMIN;                     // More initialization (see below comments)
+  
+  // Perform LIDAR scan
+  while (j < SERVOMAX) {                  // Sweep vertically - NOTE: SERVOMIN is looking straight up
+                                    // and SERVOMAX is looking downward at about 40 degrees. This
+                                    // means we really need j to run from SERVOMAX to SERVOMIN + 50
+
+                                    // WRONG!!! This drives the servos the wrong direction. In other words
+                                    // the pulse width is the relative motion, not an absolute position!
+                                    
+    // Set vertical control servo
+    curServo.setPWM(0,0,j);
+    delay(500);
+                                    
+    for (i = SERVOMIN; i < SERVOMAX; i++)       // Sweep horizontally
+    {
+      // Move pan/tilt to i,j position
+      curServo.setPWM(1,0,i);
+      delay(500);
+
+      // Sense distance
+      long LIDARrange = myLidarLite01.distance();
+      // LIDARpano[i][j] = (unsigned int)LIDARrange;     // Store distance to target
+      if (debug) 
+      {  
+          printDateStamp(); Serial.println(LIDARrange); 
+      }
+      // Query Pixy CMUcam5 for objects
+      // Add identified objects to map
+      // Extend map if needed
+      // Identify go/no go zones
+    }
+    j++;                              // Decrement vertical movement - basically, move up a degree and
+                                      // sweep in the other direction...
+    curServo.setPWM(0,0,j);
+    delay(500);
+    for (i = SERVOMAX; i >= SERVOMIN; i--)       // Sweep horizontally in the other direction
+    {
+      // Move pan/tilt to i,j position
+      curServo.setPWM(1,0,i);
+
+      // Sense distance
+      long LIDARrange = myLidarLite01.distance();
+      // LIDARpano[i][j] = (unsigned int)LIDARrange;     // Store distance to target
+      if (debug) 
+      {  
+          printDateStamp(); Serial.println(LIDARrange); 
+      }
+      // Query Pixy CMUcam5 for objects
+      // Add identified objects to map
+      // Extend map if needed
+      // Identify go/no go zones
+    }
+    j++;                        // Vertical movement
+  }
+  return(true);
+}
+
+
+// Read SparkFun 16 channel A2D multiplexer (for Sharp IR rangefinders)
+
+int readMux(int channel){
+  int controlPin[] = {s0, s1, s2, s3};
+
+  int muxChannel[16][4]={
+    {0,0,0,0}, //channel 0
+    {1,0,0,0}, //channel 1
+    {0,1,0,0}, //channel 2
+    {1,1,0,0}, //channel 3
+    {0,0,1,0}, //channel 4
+    {1,0,1,0}, //channel 5
+    {0,1,1,0}, //channel 6
+    {1,1,1,0}, //channel 7
+    {0,0,0,1}, //channel 8
+    {1,0,0,1}, //channel 9
+    {0,1,0,1}, //channel 10
+    {1,1,0,1}, //channel 11
+    {0,0,1,1}, //channel 12
+    {1,0,1,1}, //channel 13
+    {0,1,1,1}, //channel 14
+    {1,1,1,1}  //channel 15
+  };
+
+  //loop through the 4 sig
+  for(int i = 0; i < 4; i ++){
+    digitalWrite(controlPin[i], muxChannel[channel][i]);
+  }
+
+  //read the value at the SIG pin
+  int val = analogRead(SIG_pin);
+
+  //return the value
+  return val;
+}
+
+
+//-------------------------------------------------------------------------
+// Main setup and loop
+//-------------------------------------------------------------------------
+
 void setup() {
   // put your setup code here, to run once:
   uint8_t cnt = 0;
@@ -105,6 +241,7 @@ void setup() {
   Serial.println("# CPU A STARTUP");
   Serial.println("# CPU A Boot sequence start.");
 
+  // Real time clock setup
   rtc.begin();
   if (! rtc.isrunning()) {
     Serial.println("# CPU A RTC is NOT running!");
@@ -135,7 +272,7 @@ void setup() {
       if (strncmp("OK", dataBuffer, 2) == 0)
       {
         dualCPUenabled = true;
-        printDateStamp; Serial.println("... Arduino B responding.");
+        printDateStamp(); Serial.println("... Arduino B responding.");
         break;
       }
     }
@@ -236,10 +373,6 @@ void setup() {
   // {
     // while(1);
   // }
-
-  // SD/MMC card initialization.
-  printDateStamp(); Serial.println("CPU A ... SD/MMC card initialiation.");
-  /* Delete any data already on SD/MMC device */
 
   // END SCIENCE PACKAGE SETUP
 
@@ -356,9 +489,12 @@ void setup() {
   // PAN/TILT SETUP
   printDateStamp(); Serial.println("CPU A Pan/tilt mast startup sequence.");
 
-  printDateStamp(); Serial.println("CPU A ... front mast.");
+  pwmServos01.begin();
+  pwmServos01.setPWMFreq(60);
+  // Note: the vertical movement is controlled by servo 0, while horizontal movement is controlled by servo 1
+  printDateStamp(); Serial.println("CPU A ... front LIDAR mast.");
 
-  printDateStamp(); Serial.println("CPU A ... rear mast.");
+  // printDateStamp(); Serial.println("CPU A ... rear LIDAR mast.");
 
   // END PAN/TILT SETUP
 
@@ -445,6 +581,15 @@ void loop() {
 
   /* Flush the serial buffer */
   Serial3.flush();
+
+  // Communicate data to mission operations center.
+  // NOTE: this wil use WiFi for simplicity originally. Eventually, though
+  // this will use the RFM22 amateur radio card.
+  while (Serial3.available() > 0)
+  {
+    // Get GPS data from Arduino B
+    Serial3.readBytesUntil('\n', dataBuffer, sizeof(dataBuffer));
+  }
   
   // END SCIENCE PACKAGE SEGMENT
 
@@ -482,11 +627,9 @@ void loop() {
 
   if (UseLIDAR)
   {
-    // Perform LIDAR scan
-    long LIDARrange = myLidarLite01.distance();
-    if (debug) 
-    { 
-        printDateStamp(); Serial.println(LIDARrange); 
+    if (!doLIDARscan(pwmServos01))
+    {
+      printDateStamp(); Serial.println("LIDAR scan failed.");
     }
     // Serial3.print("LIDAR,FRONT: ");
     // Serial3.println(LIDARrange);
@@ -521,41 +664,5 @@ void loop() {
   delay(500);
   
 }
-
-
-int readMux(int channel){
-  int controlPin[] = {s0, s1, s2, s3};
-
-  int muxChannel[16][4]={
-    {0,0,0,0}, //channel 0
-    {1,0,0,0}, //channel 1
-    {0,1,0,0}, //channel 2
-    {1,1,0,0}, //channel 3
-    {0,0,1,0}, //channel 4
-    {1,0,1,0}, //channel 5
-    {0,1,1,0}, //channel 6
-    {1,1,1,0}, //channel 7
-    {0,0,0,1}, //channel 8
-    {1,0,0,1}, //channel 9
-    {0,1,0,1}, //channel 10
-    {1,1,0,1}, //channel 11
-    {0,0,1,1}, //channel 12
-    {1,0,1,1}, //channel 13
-    {0,1,1,1}, //channel 14
-    {1,1,1,1}  //channel 15
-  };
-
-  //loop through the 4 sig
-  for(int i = 0; i < 4; i ++){
-    digitalWrite(controlPin[i], muxChannel[channel][i]);
-  }
-
-  //read the value at the SIG pin
-  int val = analogRead(SIG_pin);
-
-  //return the value
-  return val;
-}
-
 
 
