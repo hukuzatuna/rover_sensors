@@ -37,7 +37,7 @@ void setup() {
 
   // SCIENCE PACKAGE SETUP
   
-  Serial.println("Science package startup sequence.");
+  Serial.println("# Science package startup sequence.");
   
   /* Set up sensors on the 10DoF breakout. */
   if (!accel.begin())
@@ -45,18 +45,10 @@ void setup() {
     Serial.println(F("No LSM303 detected - accelerometer."));
     cnt = 1;
   }
-  else
-  {
-    Serial.println("LSM303 accelerometer ok");
-  }
   
   if (!mag.begin()) {
     Serial.println(F("No LSM303 detected - magnetometer."));
     cnt = 1;
-  }
-  else
-  {
-    Serial.println("LSM303 magnetometer ok");
   }
   
   if (!bmp.begin())
@@ -64,19 +56,11 @@ void setup() {
     Serial.println("No BMP085 detected - barometer.");
     cnt = 1;
   }
-  else
-  {
-    Serial.println("BMP085 barometer ok");
-  }
   
   if (!gyro.begin())
   {
     Serial.println("No L3GD20 detected - gyroscope.");
     cnt = 1;
-  }
-  else
-  {
-    Serial.println("L3GD20 gyroscope ok.");
   }
   
   if (!tsl.begin())
@@ -84,11 +68,7 @@ void setup() {
     Serial.println("No TSL2561 detected.");
     cnt = 1;
   }
-  else
-  {
-    Serial.println("TSL2561 light sensor ok. Setting gain and integration time.");
-  }
-
+  
   /* Initialie the TSL2561 light sensor gain and integration time */
   configureTSLSensor();
 
@@ -97,20 +77,12 @@ void setup() {
     Serial.println("No SI1145 detected.");
     cnt = 1;
   }
-  else
-  {
-    Serial.println("SI1145 light sensor ok.");
-  }
   
   /* Initialie the HTU21DF temperature and humidity sensor */
   if (!htu.begin()) 
   {
     Serial.println("No HTU21DF sensor!");
     cnt = 1;
-  }
-  else
-  {
-    Serial.println("HTU21DF temp/humidity sensor ok.");
   }
   
   // if (0 < cnt)
@@ -176,63 +148,52 @@ void loop() {
   /* In the future, the science data will also be sent over the radio on request for science data. */
   
   accel.getEvent(&event);
-  Serial.print(F("10DOF ACCEL "));
-  Serial.print("X: "); Serial.print(event.acceleration.x); Serial.print("  ");
-  Serial.print("Y: "); Serial.print(event.acceleration.y); Serial.print("  ");
-  Serial.print("Z: "); Serial.print(event.acceleration.z); Serial.print("  ");Serial.println("m/s^2 ");
+  Serial.print(event.acceleration.x); Serial.print(",");
+  Serial.print(event.acceleration.y); Serial.print(",");
+  Serial.print(event.acceleration.z); Serial.print(",");
 
   mag.getEvent(&event);
-  Serial.print(F("10DOF MAG   "));
-  Serial.print("X: "); Serial.print(event.magnetic.x); Serial.print("  ");
-  Serial.print("Y: "); Serial.print(event.magnetic.y); Serial.print("  ");
-  Serial.print("Z: "); Serial.print(event.magnetic.z); Serial.print("  ");Serial.println("uT");
+  Serial.print(event.magnetic.x); Serial.print(",");
+  Serial.print(event.magnetic.y); Serial.print(",");
+  Serial.print(event.magnetic.z); Serial.print(",");
 
   gyro.getEvent(&event);
-  Serial.print(F("10DOF GYRO  "));
-  Serial.print("X: "); Serial.print(event.gyro.x); Serial.print("  ");
-  Serial.print("Y: "); Serial.print(event.gyro.y); Serial.print("  ");
-  Serial.print("Z: "); Serial.print(event.gyro.z); Serial.print("  ");Serial.println("rad/s ");  
+  Serial.print(event.gyro.x); Serial.print(",");
+  Serial.print(event.gyro.y); Serial.print(",");
+  Serial.print(event.gyro.z); Serial.print(",");  
 
   bmp.getEvent(&event);
   if (event.pressure)
   {
     /* Display atmospheric pressure in hPa */
-    Serial.print(F("10DOF PRESS "));
-    Serial.print(event.pressure);
-    Serial.print(F(" hPa, "));
+    Serial.print(event.pressure); Serial.print(",");
     /* Display ambient temperature in C */
     float temperature;
     bmp.getTemperature(&temperature);
-    Serial.print(temperature);
-    Serial.println(F(" C "));
+    Serial.print(temperature); Serial.print(",");
   }
 
   /* TSL2561 light conditions */
   tsl.getEvent(&event);
   if (event.light)
   {
-    Serial.print("TSL2561: "); Serial.print(event.light); Serial.println(" lux");
-  }
-  else
-  {
-    Serial.println("TSL2561 overload");
+    Serial.print(event.light); Serial.print(",");
   }
 
   /* SI1145 UV/visible/IR level sensor */
-  Serial.print("SI1145 Vis: "); Serial.print(uv.readVisible());
-  Serial.print(", IR: "); Serial.print(uv.readIR());
+  Serial.print(uv.readVisible()); Serial.print(",");
+  Serial.print(uv.readIR()); Serial.print(",");
   float UVindex = uv.readUV();
-  Serial.print(", UV: "); Serial.print(UVindex);
+  Serial.print(UVindex); Serial.print(",");
   UVindex /= 100.0;
-  Serial.print(", UVI: "); Serial.println(UVindex);
+  Serial.print(UVindex); Serial.print(",");
   
   /* HTU21DF temperature/humidity sensor */
-  Serial.print("HTU21DF Temp: "); Serial.print(htu.readTemperature());
-  Serial.print(" Hum: "); Serial.println(htu.readHumidity());
+  Serial.print(htu.readTemperature()); Serial.print(",");
+  Serial.println(htu.readHumidity());
   
   // Debugging. Remove before flight. :-)
-  Serial.println("");
-  delay(10000);
+  // delay(10000);
 
   // END SCIENCE PACKAGE SEGMENT
 
